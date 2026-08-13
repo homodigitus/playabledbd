@@ -97,4 +97,39 @@ describe("runHttpTransport", () => {
     expect(payload.id).toBe(1);
     expect(payload.result?.serverInfo?.name).toBe("lumen-playables-rag");
   });
+
+  it("answers a CORS preflight OPTIONS request without requiring auth", async () => {
+    server = await runHttpTransport({ transport: "http", port: 0, authToken: AUTH_TOKEN });
+    const port = portOf(server);
+
+    const res = await fetch(`http://127.0.0.1:${port}/`, {
+      method: "OPTIONS",
+      headers: {
+        origin: "http://localhost:6274",
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "content-type, x-mcp-auth"
+      }
+    });
+
+    expect(res.status).toBe(204);
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(res.headers.get("access-control-allow-headers")).toContain("x-mcp-auth");
+  });
+
+  it("includes CORS headers on real responses so browser-based clients can read them", async () => {
+    server = await runHttpTransport({ transport: "http", port: 0, authToken: AUTH_TOKEN });
+    const port = portOf(server);
+
+    const res = await fetch(`http://127.0.0.1:${port}/`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        "x-mcp-auth": AUTH_TOKEN
+      },
+      body: JSON.stringify(INITIALIZE_BODY)
+    });
+
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+  });
 });

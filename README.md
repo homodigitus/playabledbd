@@ -119,7 +119,10 @@ docs at `/docs` (Swagger UI) when running.
   fixation.
 - Passwords hashed with argon2id (`apps/api/src/auth/password.ts`).
 - CORS is an explicit allowlist from `CORS_ORIGINS`, never `*`, since it's combined with
-  `credentials: true`.
+  `credentials: true`. (The MCP HTTP transport is a separate, deliberately different case:
+  it's a machine-to-machine tool endpoint authenticated by a bearer-style `x-mcp-auth`
+  token rather than cookies, carries no credentials, and allows any origin — an open CORS
+  policy there doesn't expose anything a valid token doesn't already gate.)
 - Per-route rate limiting (login and `/api/ask` have their own stricter limits on top of a
   global 200/min).
 - The global error handler never leaks stack traces, DB errors, or provider internals to
@@ -157,6 +160,16 @@ search_corpus({ query: string, topK?: number, mode?: "vector" | "hybrid" })
 Every call is logged to `search_logs` the same way `/api/ask` is, so MCP usage shows up in
 the Admin Dashboard's recent-searches view.
 
+**Connecting an MCP client:** for `MCP_TRANSPORT=http` (the mode `docker-compose.yml` uses),
+point a Streamable HTTP client at `http://localhost:4100` with an `x-mcp-auth: <MCP_AUTH_TOKEN>`
+header. `scripts/test-mcp-client.ts` is a minimal, dependency-free example using the real
+`@modelcontextprotocol/sdk` client — run it with
+`MCP_URL=http://localhost:4100 MCP_AUTH_TOKEN=<token> pnpm exec tsx scripts/test-mcp-client.ts "<query>"`
+to verify the server end to end without any UI. (MCP Inspector's own browser-based proxy has
+a known rough edge forwarding custom headers on Streamable HTTP sessions — if Inspector hangs
+on "Connecting…" despite a correct token, this script is the faster way to confirm the server
+itself is fine; it was verified working this way during development.)
+
 ## Observability
 
 - Structured JSON logging (Fastify/pino) with a `x-request-id` on every response.
@@ -192,6 +205,13 @@ Demo accounts (see `.env` / `.env.example`): `DEMO_ADMIN_EMAIL` / `DEMO_ADMIN_PA
 > `PATH`. If your environment only has `pnpm` reachable through `corepack pnpm`, run the
 > underlying command directly, e.g. `corepack pnpm --filter evals start` instead of
 > `corepack pnpm eval`.
+
+> **Note:** this repo pins `pnpm@9.15.0` via `packageManager` in `package.json`, matching
+> `pnpm-lock.yaml`. If you don't have `pnpm` installed globally, prefer
+> `corepack enable` (uses the pinned version automatically) over bare `npx pnpm ...`, which
+> defaults to whatever the latest pnpm release is and can end up managing a differently
+> versioned store/`node_modules` than the lockfile expects. If you do use `npx`, pin it
+> explicitly every time: `npx pnpm@9.15.0 install`, `npx pnpm@9.15.0 test`, etc.
 
 ### Docker
 
@@ -240,9 +260,13 @@ pnpm lint         # turbo run lint
 - `packages/rag` — chunking, tokenizer, hashing, retrieval fusion, and the full grounded
   `answerQuestion` flow (mocked OpenAI/DB).
 - `packages/shared` — every Zod schema round-trips valid/invalid payloads.
+- `packages/db` — schema sanity checks (tables, auth-critical and ingestion-tracking
+  columns exist by name), so a schema refactor that renames/drops something other packages
+  import fails fast without needing a live database.
 - `apps/api` — route-level integration tests (auth guards, ask/search, admin CRUD,
   ingestion trigger, stats) against a real Postgres test database.
-- `apps/mcp` — `search_corpus` tool logic and both transports.
+- `apps/mcp` — `search_corpus` tool logic and both transports, including CORS preflight
+  handling for browser-based MCP clients (e.g. MCP Inspector).
 - `apps/web` — Playwright e2e for login, chat (answered + insufficient-context), and the
   full admin flow (overview, documents, ingestion trigger), with `apps/api` mocked at the
   HTTP layer via `page.route()` so these run without a live backend.
@@ -273,5 +297,10 @@ and exits non-zero if anything fails, so it's CI-usable as a regression gate.
   tuning for very long documents.
 - The evals harness checks retrieval + citation correctness and targeted answer substrings;
   it does not run a full LLM-judge style scoring pass over free-form answer quality.
+- `.env.example`'s `MCP_AUTH_TOKEN` value is a placeholder, not a secret — the app accepts
+  it as-is since it's non-empty, which is convenient for local dev but means the demo
+  `docker-compose.yml` stack is running with a known, public token. Rotate it to a real
+  random value (e.g. `openssl rand -hex 32`) before exposing this anywhere beyond
+  localhost.
 - `SESSION_SECRET` is validated for length but not currently used to sign anything (session
   secrets are randomly generated per-session, not derived from it).
