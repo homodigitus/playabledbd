@@ -1,0 +1,38 @@
+node_modules/
+.pnpm-store/
+dist/
+build/
+.next/
+.turbo/
+coverage/
+*.tsbuildinfo
+
+# env
+.env
+.env.*.local
+!.env.example
+
+# corpus (private dataset — do not publish)
+/corpus/*
+!/corpus/.gitkeep
+
+# db data
+docker/pgdata/
+*.sqlite
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# test artifacts
+playwright-report/
+test-results/
+evals/results/
